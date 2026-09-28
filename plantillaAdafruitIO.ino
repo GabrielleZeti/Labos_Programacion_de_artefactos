@@ -36,7 +36,7 @@
 // Adafruit IO Account Configuration
 // (to obtain these values, visit https://io.adafruit.com and click on Active Key)
 #define AIO_USERNAME "GabrielUrquilla"
-#define AIO_KEY      "aio_YOxQ69tZNGeKYi6olUR5mQhP7SaT"
+#define AIO_KEY      ""
 
 /************ Global State (you don't need to change this!) ******************/
 
