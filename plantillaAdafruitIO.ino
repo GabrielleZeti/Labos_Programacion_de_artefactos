@@ -1,118 +1,188 @@
-/***********************************************************************
-  Adafruit MQTT Library ESP32 Adafruit IO SSL/TLS example
-
-  Use the latest version of the ESP32 Arduino Core:
-    https://github.com/espressif/arduino-esp32
-
-  Works great with Adafruit Huzzah32 Feather and Breakout Board:
-    https://www.adafruit.com/product/3405
-    https://www.adafruit.com/products/4172
-
-  Adafruit invests time and resources providing this open source code,
-  please support Adafruit and open-source hardware by purchasing
-  products from Adafruit!
-
-  Written by Tony DiCola for Adafruit Industries.
-  Modified by Brent Rubell for Adafruit Industries
-  MIT license, all text above must be included in any redistribution
- **********************************************************************/
-#include <WiFi.h>
-#include "WiFiClientSecure.h"
+#include <WiFi.h>                     
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
 
-/************************* WiFi Access Point *********************************/
+// ---------------------- CONFIGURACIÓN WI-FI ----------------------
+#define WLAN_SSID   "ARTEFACTOS"
+#define WLAN_PASS   "87654321"
 
-#define WLAN_SSID "ARTEFACTOS"
-#define WLAN_PASS "87654321"
-
-/************************* Adafruit.io Setup *********************************/
-
+// ---------------------- CONFIGURACIÓN ADAFRUIT IO ----------------------
 #define AIO_SERVER      "io.adafruit.com"
+#define AIO_SERVERPORT  1883
+#define AIO_USERNAME    "GabrielUrquilla"   
+#define AIO_KEY         ""           //(no la subas a repositorio)
 
-// Using port 8883 for MQTTS
-#define AIO_SERVERPORT  8883
+// ---------------------- PINES ----------------------
+#define TRIG_PIN  18
+#define ECHO_PIN  19
+#define PIN_R     25
+#define PIN_G     26
+#define PIN_B     27
 
-// Adafruit IO Account Configuration
-// (to obtain these values, visit https://io.adafruit.com and click on Active Key)
-#define AIO_USERNAME "GabrielUrquilla"
-#define AIO_KEY      ""
+// ---------------------- AJUSTES ----------------------
+#define RGB_ANODO_COMUN  false      
+#define PWM_FREQ         5000
+#define PWM_RES          8         
+#define INTERVALO_PUBLICAR_MS 5000  // Adafruit gratis limita los datos por minuto: no bajar de 4-5 s
+#define DIST_CERCA_CM    15.0     
+#define DIST_MEDIA_CM    30.0    
 
-/************ Global State (you don't need to change this!) ******************/
-
-// WiFiFlientSecure for SSL/TLS support
-WiFiClientSecure client;
-
-// Setup the MQTT client class by passing in the WiFi client and MQTT server and login details.
+// ---------------------- CLIENTE MQTT Y FEED ----------------------
+WiFiClient client;
 Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
 
-// io.adafruit.com root CA
-const char* adafruitio_root_ca = \
-      "-----BEGIN CERTIFICATE-----\n"
-      "MIIEjTCCA3WgAwIBAgIQDQd4KhM/xvmlcpbhMf/ReTANBgkqhkiG9w0BAQsFADBh\n"
-      "MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3\n"
-      "d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBH\n"
-      "MjAeFw0xNzExMDIxMjIzMzdaFw0yNzExMDIxMjIzMzdaMGAxCzAJBgNVBAYTAlVT\n"
-      "MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j\n"
-      "b20xHzAdBgNVBAMTFkdlb1RydXN0IFRMUyBSU0EgQ0EgRzEwggEiMA0GCSqGSIb3\n"
-      "DQEBAQUAA4IBDwAwggEKAoIBAQC+F+jsvikKy/65LWEx/TMkCDIuWegh1Ngwvm4Q\n"
-      "yISgP7oU5d79eoySG3vOhC3w/3jEMuipoH1fBtp7m0tTpsYbAhch4XA7rfuD6whU\n"
-      "gajeErLVxoiWMPkC/DnUvbgi74BJmdBiuGHQSd7LwsuXpTEGG9fYXcbTVN5SATYq\n"
-      "DfbexbYxTMwVJWoVb6lrBEgM3gBBqiiAiy800xu1Nq07JdCIQkBsNpFtZbIZhsDS\n"
-      "fzlGWP4wEmBQ3O67c+ZXkFr2DcrXBEtHam80Gp2SNhou2U5U7UesDL/xgLK6/0d7\n"
-      "6TnEVMSUVJkZ8VeZr+IUIlvoLrtjLbqugb0T3OYXW+CQU0kBAgMBAAGjggFAMIIB\n"
-      "PDAdBgNVHQ4EFgQUlE/UXYvkpOKmgP792PkA76O+AlcwHwYDVR0jBBgwFoAUTiJU\n"
-      "IBiV5uNu5g/6+rkS7QYXjzkwDgYDVR0PAQH/BAQDAgGGMB0GA1UdJQQWMBQGCCsG\n"
-      "AQUFBwMBBggrBgEFBQcDAjASBgNVHRMBAf8ECDAGAQH/AgEAMDQGCCsGAQUFBwEB\n"
-      "BCgwJjAkBggrBgEFBQcwAYYYaHR0cDovL29jc3AuZGlnaWNlcnQuY29tMEIGA1Ud\n"
-      "HwQ7MDkwN6A1oDOGMWh0dHA6Ly9jcmwzLmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEds\n"
-      "b2JhbFJvb3RHMi5jcmwwPQYDVR0gBDYwNDAyBgRVHSAAMCowKAYIKwYBBQUHAgEW\n"
-      "HGh0dHBzOi8vd3d3LmRpZ2ljZXJ0LmNvbS9DUFMwDQYJKoZIhvcNAQELBQADggEB\n"
-      "AIIcBDqC6cWpyGUSXAjjAcYwsK4iiGF7KweG97i1RJz1kwZhRoo6orU1JtBYnjzB\n"
-      "c4+/sXmnHJk3mlPyL1xuIAt9sMeC7+vreRIF5wFBC0MCN5sbHwhNN1JzKbifNeP5\n"
-      "ozpZdQFmkCo+neBiKR6HqIA+LMTMCMMuv2khGGuPHmtDze4GmEGZtYLyF8EQpa5Y\n"
-      "jPuV6k2Cr/N3XxFpT3hRpt/3usU/Zb9wfKPtWpoznZ4/44c1p9rzFcZYrWkj3A+7\n"
-      "TNBJE0GmP2fhXhP1D/XVfIW/h0yCJGEiV9Glm/uGOa3DXHlmbAcxSyCRraG+ZBkA\n"
-      "7h4SeM6Y8l/7MBRpPCz6l8Y=\n"
-      "-----END CERTIFICATE-----\n";
+// Publicar
+Adafruit_MQTT_Publish feedDistancia = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/distancia");
 
-/****************************** Feeds ***************************************/
+// ---------------------- ESTADO ----------------------
+float ultimaDistancia = -1;             // última lectura válida (cm)
+unsigned long ultimoPublicar = 0;
+unsigned long ultimoPing = 0;
 
-// Setup a feed called 'test' for publishing.
-// Notice MQTT paths for AIO follow the form: <username>/feeds/<feedname>
-Adafruit_MQTT_Publish test = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/test");
+// ---------------------- PROTOTIPOS ----------------------
+void conectarWiFi();
+void conectarMQTT();
+float leerDistanciaCm();
+float distanciaPromedio(int muestras);
+void escribirRGB(uint8_t r, uint8_t g, uint8_t b);
+void actualizarLED();
 
-/*************************** Sketch Code ************************************/
-#define TRIG_PIN 18
-#define ECHO_PIN 19
-
+// =====================================================================
 void setup() {
   Serial.begin(115200);
+  delay(10);
 
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
+
+  ledcAttach(PIN_R, PWM_FREQ, PWM_RES);
+  ledcAttach(PIN_G, PWM_FREQ, PWM_RES);
+  ledcAttach(PIN_B, PWM_FREQ, PWM_RES);
+
+  escribirRGB(255, 255, 255);   
+
+  conectarWiFi();
 }
 
+// =====================================================================
 void loop() {
+  conectarMQTT();   // mantiene la conexión con Adafruit (reconecta si se cae)
+
+  // Leer el ultrasónico y publicar cada cierto tiempo
+  if (millis() - ultimoPublicar >= INTERVALO_PUBLICAR_MS) {
+    ultimoPublicar = millis();
+
+    float d = distanciaPromedio(5);
+    if (d > 0) {
+      ultimaDistancia = d;
+      Serial.print("Distancia: "); Serial.print(d, 1); Serial.println(" cm");
+
+      if (!feedDistancia.publish(d)) {
+        Serial.println("Error al publicar la distancia");
+      }
+    } else {
+      Serial.println("Lectura fuera de rango o sin eco");
+    }
+
+    actualizarLED();   // el color depende de la última distancia leída
+  }
+
+  // Mantener viva la conexión MQTT
+  if (millis() - ultimoPing >= 30000) {
+    ultimoPing = millis();
+    mqtt.ping();
+  }
+}
+
+// =====================================================================
+//  ULTRASÓNICO HC-SR04
+// =====================================================================
+float leerDistanciaCm() {
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
-
   digitalWrite(TRIG_PIN, HIGH);
   delayMicroseconds(10);
-  
   digitalWrite(TRIG_PIN, LOW);
 
   long duracion = pulseIn(ECHO_PIN, HIGH, 30000);
+  if (duracion == 0) return -1;   // no hubo eco
 
-  if (duracion == 0) {
-    Serial.println("No se detectó eco");
-  } else {
-    float distancia = (duracion * 0.0343) / 2.0;
+  float distancia = (duracion * 0.0343) / 2.0;
 
-    Serial.print("Distancia: ");
-    Serial.print(distancia, 1);
-    Serial.println(" cm");
+  // Rango útil del sensor: 2 a 100 cm
+  if (distancia < 2 || distancia > 100) return -1;
+  return distancia;
+}
+
+// Promedia varias lecturas para reducir el ruido
+float distanciaPromedio(int muestras) {
+  float suma = 0;
+  int validas = 0;
+  for (int i = 0; i < muestras; i++) {
+    float d = leerDistanciaCm();
+    if (d > 0) { suma += d; validas++; }
+    delay(40);   // espera entre mediciones para que no se mezclen los ecos
+  }
+  return (validas > 0) ? suma / validas : -1;
+}
+
+// =====================================================================
+//  LED RGB
+// =====================================================================
+void escribirRGB(uint8_t r, uint8_t g, uint8_t b) {
+  if (RGB_ANODO_COMUN) {          
+    r = 255 - r;  g = 255 - g;  b = 255 - b;
+  }
+  ledcWrite(PIN_R, r);
+  ledcWrite(PIN_G, g);
+  ledcWrite(PIN_B, b);
+}
+
+// El color debe cambiar solo según la última distancia leída.
+void actualizarLED() {
+  if (ultimaDistancia <= 0) {
+    escribirRGB(255, 255, 255);   
+    return;
   }
 
-  delay(500);
+  if (ultimaDistancia < DIST_CERCA_CM) {
+    escribirRGB(255, 0, 0);       // ROJO
+  } else if (ultimaDistancia <= DIST_MEDIA_CM) {
+    escribirRGB(255, 255, 0);     // AMARILLO
+  } else {
+    escribirRGB(0, 255, 0);       // VERDE
+  }
+}
+
+// =====================================================================
+//  CONEXIONES
+// =====================================================================
+void conectarWiFi() {
+  Serial.print("Conectando a "); Serial.println(WLAN_SSID);
+  WiFi.begin(WLAN_SSID, WLAN_PASS);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.print("WiFi conectado. IP: "); Serial.println(WiFi.localIP());
+}
+
+void conectarMQTT() {
+  if (mqtt.connected()) return;
+
+  Serial.print("Conectando a Adafruit IO... ");
+  int8_t ret;
+  uint8_t intentos = 3;
+  while ((ret = mqtt.connect()) != 0) {         
+    Serial.println(mqtt.connectErrorString(ret));
+    Serial.println("Reintentando en 5 segundos...");
+    mqtt.disconnect();
+    delay(5000);
+    if (--intentos == 0) {
+      Serial.println("No se pudo conectar. Reiniciando la ESP32...");
+      ESP.restart();
+    }
+  }
+  Serial.println("¡Conectado a Adafruit IO!");
 }
